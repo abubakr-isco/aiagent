@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.sqlite3
+backend/staticfiles/
+data/*
+!data/.gitkeep
+frontend/node_modules/
+frontend/dist/
+*.pem
+*.key
+models/*.json
+.DS_Store

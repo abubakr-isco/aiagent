@@ -1,0 +1,19 @@
+[project]
+name = "ai-trading-agent"
+version = "0.1.0"
+description = "AI trading agent for MetaTrader 5 (engine + Django backend)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "backend/tests"]
+pythonpath = [".", "backend"]
+DJANGO_SETTINGS_MODULE = "config.settings"
+addopts = "-ra -p no:cacheprovider --import-mode=importlib"
+filterwarnings = ["ignore::DeprecationWarning:fastapi.testclient", "ignore:Using `httpx`:DeprecationWarning"]
+markers = [
+    "slow: long-running backtest/walk-forward tests",
+]
+
+[tool.ruff]
+line-length = 140
+target-version = "py311"
