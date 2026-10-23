@@ -1,0 +1,10 @@
+# Engine + Django backend (Linux/macOS/Windows). No MetaTrader5 here: see requirements-bridge.txt.
+Django==5.2.18
+djangorestframework==3.18.3
+django-cors-headers==4.9.0
+psycopg[binary]==3.3.6
+pandas==3.1.0
+numpy==2.5.4
+httpx==0.28.1
+python-dotenv==1.2.4
+gunicorn==23.0.0

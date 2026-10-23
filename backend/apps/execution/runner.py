@@ -192,7 +192,7 @@ class AgentRunner:
             cmd.result = message
             cmd.processed_at = dj_tz.now()
             cmd.save()
-            SystemEvent.objects.create(level="INFO" if ok else "WARNING", category="command", message=f"{cmd.command} by {cmd.requested_by}: {message}",
+            SystemEvent.objects.create(level="INFO" if ok else "WARNING", category="command", message=f"{cmd.command} by {cmd.requested_by or 'system'}: {message}",
                                        data={"command_id": cmd.pk, "params": cmd.params})
 
     def _apply(self, cmd: AgentCommand) -> tuple[bool, str]:

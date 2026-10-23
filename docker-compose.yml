@@ -1,0 +1,43 @@
+# Local stack: PostgreSQL + API + agent runner + dashboard.
+# MT5 cannot run inside these Linux containers. Use MT5_GATEWAY settings
+# "mock" (simulation) or "remote" (bridge/mt5_bridge.py on a Windows host).
+# Ports bind to 127.0.0.1 only; put TLS in front before exposing anything.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: trading
+      POSTGRES_USER: trading
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading -d trading"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: { context: ., dockerfile: deployment/Dockerfile.backend }
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://trading:${POSTGRES_PASSWORD}@db:5432/trading
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend
+    volumes: [./data:/app/data:ro]
+    depends_on: { db: { condition: service_healthy } }
+    ports: ["127.0.0.1:8000:8000"]
+
+  agent:
+    build: { context: ., dockerfile: deployment/Dockerfile.backend }
+    command: ["python", "manage.py", "run_agent"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://trading:${POSTGRES_PASSWORD}@db:5432/trading
+    depends_on: [backend]
+    restart: unless-stopped
+
+  frontend:
+    build: { context: ., dockerfile: deployment/Dockerfile.frontend }
+    depends_on: [backend]
+    ports: ["127.0.0.1:8080:80"]
+
+volumes:
+  pgdata:

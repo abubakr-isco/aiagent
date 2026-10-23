@@ -266,3 +266,12 @@ def test_status_contains_dashboard_fields():
     assert st.connected and st.account.equity > 0
     assert st.positions and st.positions[0]["agent"] is True
     assert st.day_start_equity is not None
+
+
+def test_risk_uses_the_agent_clock_for_the_trading_day():
+    mock = MockMT5Gateway(seed=3)
+    agent, mock, journal = make_agent(mock, clock=mock.now)
+    agent.set_mode(AgentMode.DEMO)
+    agent.start()
+    agent.run_cycle()
+    assert set(journal.days) == {mock.now().date()}

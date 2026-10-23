@@ -12,3 +12,5 @@ frontend/dist/
 *.key
 models/*.json
 .DS_Store
+frontend/tsconfig.tsbuildinfo
+.pgdata/

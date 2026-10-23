@@ -126,7 +126,7 @@ class MockMT5Gateway:
         *,
         base_minutes: int = 5,
         specs: dict[str, SymbolInfo] | None = None,
-        start_index: int = 3000,
+        start_index: int = 12_000,
         state: MockState | None = None,
         seed: int = 7,
     ):
@@ -135,7 +135,7 @@ class MockMT5Gateway:
         if data is None:
             data = {
                 sym: synthetic_ohlc(
-                    periods=12_000, minutes=base_minutes, base_price=DEFAULT_PRICES[sym], digits=self.specs[sym].digits,
+                    periods=40_000, minutes=base_minutes, base_price=DEFAULT_PRICES[sym], digits=self.specs[sym].digits,
                     volatility=DEFAULT_VOL[sym], spread_points=20 if sym == "XAUUSD" else 8, seed=seed + i,
                 )
                 for i, sym in enumerate(self.specs)

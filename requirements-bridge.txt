@@ -1,0 +1,8 @@
+# Windows host with the MetaTrader 5 terminal installed and logged in.
+# Check https://pypi.org/project/MetaTrader5/ for the Python versions it supports.
+MetaTrader5>=5.0.45
+pandas==3.1.0
+numpy==2.5.4
+httpx==0.28.1
+fastapi==0.161.1
+uvicorn==0.54.0

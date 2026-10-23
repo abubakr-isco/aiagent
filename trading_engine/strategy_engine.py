@@ -49,6 +49,10 @@ def _fmt(x: float | None, digits: int = 5) -> str:
     return "n/a" if x is None else f"{x:.{digits}f}"
 
 
+def _digits(point: float | None) -> int:
+    return max(0, round(-math.log10(point))) if point else 5
+
+
 class TrendPullbackStrategy(Strategy):
     strategy_id = "trend_pullback"
     version = "1.0.0"
@@ -59,6 +63,11 @@ class TrendPullbackStrategy(Strategy):
         entry_tf = snapshot.frame(p.entry_tf)
         context = snapshot.frame(p.context_tf)
         checks: list[Check] = []
+        d = _digits(snapshot.point)
+
+        def fmt(x: float | None) -> str:
+            return _fmt(x, d)
+
         if trend is None or entry_tf is None:
             checks.append(Check("data_available", False, f"missing {p.trend_tf if trend is None else p.entry_tf} analysis (not enough closed bars)"))
             return StrategyEvaluation(snapshot.symbol, self.strategy_id, None, checks)
@@ -74,12 +83,12 @@ class TrendPullbackStrategy(Strategy):
 
         long = side is Side.BUY
         sgn = side.sign
-        checks.append(Check("h1_trend", True, f"{p.trend_tf} trend {trend.trend}: close {_fmt(trend.close)} vs EMA200 {_fmt(trend.ema_slow)}, EMA50 slope {trend.ema_mid_slope_atr:+.2f} ATR"))
+        checks.append(Check("h1_trend", True, f"{p.trend_tf} trend {trend.trend}: close {fmt(trend.close)} vs EMA200 {fmt(trend.ema_slow)}, EMA50 slope {trend.ema_mid_slope_atr:+.2f} ATR"))
         bad_structure = "BEARISH" if long else "BULLISH"
         checks.append(Check("h1_structure", trend.structure != bad_structure, f"{p.trend_tf} structure {trend.structure} {'/'.join(trend.structure_labels)}"))
 
         aligned = (entry_tf.ema_fast - entry_tf.ema_mid) * sgn > 0 and (entry_tf.close - entry_tf.ema_mid) * sgn > 0
-        checks.append(Check("m15_alignment", aligned, f"{p.entry_tf} EMA20 {_fmt(entry_tf.ema_fast)} / EMA50 {_fmt(entry_tf.ema_mid)}, close {_fmt(entry_tf.close)}"))
+        checks.append(Check("m15_alignment", aligned, f"{p.entry_tf} EMA20 {fmt(entry_tf.ema_fast)} / EMA50 {fmt(entry_tf.ema_mid)}, close {fmt(entry_tf.close)}"))
         checks.append(Check("m15_structure", entry_tf.structure != bad_structure, f"{p.entry_tf} structure {entry_tf.structure}"))
 
         atr = entry_tf.atr
@@ -94,12 +103,12 @@ class TrendPullbackStrategy(Strategy):
             extreme = max(highs)
             touched = extreme >= ref_ema - p.pullback_tolerance_atr * atr
             too_deep = extreme > entry_tf.ema_mid + p.max_pullback_depth_atr * atr
-        checks.append(Check("pullback", touched, f"{'low' if long else 'high'} of last {p.pullback_lookback} bars {_fmt(extreme)} vs EMA{20 if p.pullback_ema == 'fast' else 50} {_fmt(ref_ema)} ± {p.pullback_tolerance_atr} ATR"))
+        checks.append(Check("pullback", touched, f"{'low' if long else 'high'} of last {p.pullback_lookback} bars {fmt(extreme)} vs EMA{20 if p.pullback_ema == 'fast' else 50} {fmt(ref_ema)} ± {p.pullback_tolerance_atr} ATR"))
         checks.append(Check("pullback_depth", not too_deep, f"pullback {'did not break' if not too_deep else 'broke'} EMA50 by more than {p.max_pullback_depth_atr} ATR"))
 
         candle_dir = (entry_tf.close - entry_tf.open) * sgn > 0
         reclaimed = (entry_tf.close - ref_ema) * sgn > 0 and (entry_tf.close - entry_tf.prev_close) * sgn > 0
-        checks.append(Check("confirmation_candle", candle_dir and reclaimed, f"last {p.entry_tf} candle {'bullish' if entry_tf.close > entry_tf.open else 'bearish'}, close {_fmt(entry_tf.close)} vs prev {_fmt(entry_tf.prev_close)}"))
+        checks.append(Check("confirmation_candle", candle_dir and reclaimed, f"last {p.entry_tf} candle {'bullish' if entry_tf.close > entry_tf.open else 'bearish'}, close {fmt(entry_tf.close)} vs prev {fmt(entry_tf.prev_close)}"))
 
         lo, hi = (p.rsi_long_min, p.rsi_long_max) if long else (p.rsi_short_min, p.rsi_short_max)
         rsi_ok = lo <= entry_tf.rsi <= hi and (entry_tf.rsi - entry_tf.rsi_prev) * sgn > 0
@@ -143,7 +152,7 @@ class TrendPullbackStrategy(Strategy):
             structural_sl = max(highs) + p.sl_atr_buffer * atr + spread_val
             risk = max(structural_sl - entry, p.min_sl_atr * atr)
             sl = entry + risk
-        checks.append(Check("stop_distance", risk <= p.max_sl_atr * atr, f"SL {_fmt(sl)} risk {risk / atr:.2f} ATR (allowed [{p.min_sl_atr}, {p.max_sl_atr}])"))
+        checks.append(Check("stop_distance", risk <= p.max_sl_atr * atr, f"SL {fmt(sl)} risk {risk / atr:.2f} ATR (allowed [{p.min_sl_atr}, {p.max_sl_atr}])"))
         tp = entry + sgn * p.rr_target * risk
         if snapshot.point:
             digits = max(0, round(-math.log10(snapshot.point)))
@@ -155,13 +164,13 @@ class TrendPullbackStrategy(Strategy):
         if candidates:
             nearest = min(candidates, key=lambda lv: abs(lv - entry))
             room = abs(nearest - entry) / risk
-            checks.append(Check("room_to_target", room >= p.min_room_rr, f"nearest {'resistance' if long else 'support'} {_fmt(nearest)} is {room:.2f}R away (min {p.min_room_rr}R)"))
+            checks.append(Check("room_to_target", room >= p.min_room_rr, f"nearest {'resistance' if long else 'support'} {fmt(nearest)} is {room:.2f}R away (min {p.min_room_rr}R)"))
         else:
             checks.append(Check("room_to_target", True, "no opposing level within lookback", mandatory=False))
 
         checks.append(Check("risk_reward", p.rr_target >= p.min_room_rr, f"target RR {p.rr_target:.2f}"))
         if entry_tf.retest and entry_tf.breakout == ("UP" if long else "DOWN"):
-            checks.append(Check("breakout_retest", True, f"retest of broken level {_fmt(entry_tf.breakout_level)}", mandatory=False))
+            checks.append(Check("breakout_retest", True, f"retest of broken level {fmt(entry_tf.breakout_level)}", mandatory=False))
         if entry_tf.volume_kind:
             checks.append(Check("volume", True, f"{entry_tf.volume_kind} volume ratio {entry_tf.volume_ratio:.2f} (informational)", mandatory=False))
 

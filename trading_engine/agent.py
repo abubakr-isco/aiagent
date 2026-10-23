@@ -436,7 +436,7 @@ class TradingAgent:
             entry_atr=snap.frame(self.strategy.params.entry_tf).atr if snap.frame(self.strategy.params.entry_tf) else None,
         )
         proposal = TradeProposal(signal.signal_id, symbol, signal.side, signal.entry, signal.stop_loss, signal.take_profit, signal.strategy_id, signal.strategy_version)
-        decision = self.risk.evaluate(proposal, ctx, realized_today=realized)
+        decision = self.risk.evaluate(proposal, ctx, realized_today=realized, now=now)
         if not decision.approved or decision.approval is None:
             self.sink.on_signal(signal, ai, SignalStatus.RISK_REJECTED, decision, None, "; ".join(decision.violations))
             return

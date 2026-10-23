@@ -1,0 +1,7 @@
+-r requirements.txt
+fastapi==0.161.1
+uvicorn==0.54.0
+pytest==9.1.1
+pytest-django==4.14.0
+# Embedded PostgreSQL for running the backend tests without Docker (optional).
+pgserver==0.1.4

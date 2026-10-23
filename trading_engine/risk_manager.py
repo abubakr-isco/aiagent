@@ -257,7 +257,7 @@ class RiskManager:
         return True, "ok"
 
     # ---------------------------------------------------------------- evaluate
-    def evaluate(self, proposal: TradeProposal, ctx: RiskContext, *, realized_today: float | None = None) -> RiskDecision:
+    def evaluate(self, proposal: TradeProposal, ctx: RiskContext, *, realized_today: float | None = None, now: datetime | None = None) -> RiskDecision:
         cfg = self.cfg
         checks: list[Check] = []
 
@@ -335,7 +335,7 @@ class RiskManager:
         equity = acct.equity
         if not check("equity_positive", equity > 0, f"equity {equity}"):
             return decision
-        day = self.daily.update(acct, realized_today=realized_today)
+        day = self.daily.update(acct, now, realized_today=realized_today)
         day_loss_pct = self.daily.loss_pct(day, acct)
         decision.day_loss_pct = day_loss_pct
         check("daily_loss_lock", not day.locked, day.locked_reason or f"day loss {day_loss_pct:.2f}% (limit {cfg.daily_loss_limit_pct}%)")
