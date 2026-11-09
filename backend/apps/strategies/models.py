@@ -17,6 +17,11 @@ class StrategyConfig(models.Model):
     def __str__(self) -> str:
         return f"{self.strategy_id} {self.version}"
 
+    @classmethod
+    def active(cls) -> "StrategyConfig | None":
+        """The configuration the agent trades: the first enabled one."""
+        return cls.objects.filter(enabled=True).order_by("pk").first()
+
 
 class Signal(models.Model):
     signal_id = models.CharField(max_length=40, unique=True)

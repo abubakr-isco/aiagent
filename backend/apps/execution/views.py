@@ -58,7 +58,7 @@ class StatusView(APIView):
     def get(self, request):
         c = AgentControl.load()
         alive = runner_alive(c)
-        strat = StrategyConfig.objects.first()
+        strat = StrategyConfig.active()
         recent_signals = Signal.objects.order_by("-created_at")[:10]
         recent_trades = Execution.objects.exclude(status__in=["REJECTED", "FAILED"]).order_by("-created_at")[:10]
         events = SystemEvent.objects.order_by("-time")[:20]
@@ -143,7 +143,7 @@ class ModeView(APIView):
                 problems.append(f"confirmation phrase must be exactly '{settings.LIVE_CONFIRMATION_PHRASE}'")
             if authenticate(request, username=request.user.username, password=str(request.data.get("password", ""))) is None:
                 problems.append("password re-authentication failed")
-            strat = StrategyConfig.objects.first()
+            strat = StrategyConfig.active()
             if strat is None or strat.validation_status != "PASSED":
                 problems.append("strategy has not PASSED walk-forward validation on real data")
             kind = (AgentControl.load().account or {}).get("kind")

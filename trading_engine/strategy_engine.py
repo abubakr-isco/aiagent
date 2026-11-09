@@ -24,9 +24,10 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .config import StrategyParams
+from .constants import Timeframe
 from .market_analyzer import MarketSnapshot, TimeframeAnalysis
 from .models import Check, Side, Signal, StrategyEvaluation
 
@@ -215,7 +216,115 @@ class TrendPullbackStrategy(Strategy):
         return None
 
 
-STRATEGIES: dict[str, type[Strategy]] = {TrendPullbackStrategy.strategy_id: TrendPullbackStrategy}
+class AsianRangeBreakoutStrategy(Strategy):
+    """Asian-range breakout v1 (BUY; SELL is the mirror image).
+
+    Hours use the bar-timestamp clock, i.e. the broker server time (Forex Club:
+    UTC+2 in winter, UTC+3 in summer), the same clock live and in backtests.
+
+    1. Range = high/low of the entry-TF bars of the current day that opened in
+       [range_start_hour, range_end_hour); at least min_range_bars of them.
+    2. The last closed bar opened in [range_end_hour, entry_end_hour) and closed
+       above the range high.
+    3. It is the first close outside the range today: one trade per day.
+    4. Spread is small relative to ATR.
+    5. SL = range low (stop_mode "range") or range middle ("mid");
+       TP = entry + rr_target·risk.
+    6. A position still open at exit_hour is closed.
+    """
+
+    strategy_id = "asian_breakout"
+    version = "1.0.0"
+
+    def evaluate(self, snapshot: MarketSnapshot, *, spread: float | None, now_utc: datetime) -> StrategyEvaluation:
+        p = self.params
+        bar = snapshot.frame(p.entry_tf)
+        trend = snapshot.frame(p.trend_tf)
+        context = snapshot.frame(p.context_tf)
+        checks: list[Check] = []
+        d = _digits(snapshot.point)
+
+        def fmt(x: float | None) -> str:
+            return _fmt(x, d)
+
+        if trend is None or bar is None:
+            checks.append(Check("data_available", False, f"missing {p.trend_tf if trend is None else p.entry_tf} analysis (not enough closed bars)"))
+            return StrategyEvaluation(snapshot.symbol, self.strategy_id, None, checks)
+        checks.append(Check("data_available", True, f"{p.trend_tf}/{p.entry_tf} bars available"))
+
+        hour = bar.bar_time.hour
+        in_range = [i for i, h in enumerate(bar.day_hours) if p.range_start_hour <= h < p.range_end_hour]
+        complete = len(in_range) >= p.min_range_bars and hour >= p.range_end_hour
+        checks.append(Check("range_complete", complete, f"{len(in_range)} {p.entry_tf} bars in [{p.range_start_hour}:00, {p.range_end_hour}:00) today (min {p.min_range_bars}), last bar opened {bar.bar_time:%H:%M}"))
+        if not complete:
+            return StrategyEvaluation(snapshot.symbol, self.strategy_id, None, checks)
+        high = max(bar.day_highs[i] for i in in_range)
+        low = min(bar.day_lows[i] for i in in_range)
+
+        checks.append(Check("entry_window", p.range_end_hour <= hour < p.entry_end_hour, f"bar opened {bar.bar_time:%H:%M}, entries allowed [{p.range_end_hour}:00, {p.entry_end_hour}:00)"))
+        side = Side.BUY if bar.close > high else Side.SELL if bar.close < low else None
+        checks.append(Check("breakout", side is not None, f"close {fmt(bar.close)} vs range {fmt(low)} - {fmt(high)}"))
+        if side is None:
+            return StrategyEvaluation(snapshot.symbol, self.strategy_id, None, checks)
+        long = side is Side.BUY
+        sgn = side.sign
+        earlier = [c for h, c in zip(bar.day_hours[:-1], bar.day_closes[:-1]) if h >= p.range_end_hour]
+        first = not any(c > high or c < low for c in earlier)
+        checks.append(Check("first_break", first, "first close outside the range today" if first else "range already broken earlier today (one trade per day)"))
+
+        atr = bar.atr
+        if spread is None:
+            checks.append(Check("spread", False, "spread unknown"))
+            spread_val = 0.0
+        else:
+            spread_val = spread
+            ratio = spread / atr if atr > 0 else float("inf")
+            checks.append(Check("spread", ratio <= p.max_spread_atr_ratio, f"spread {spread:.5f} = {ratio:.2f} ATR (max {p.max_spread_atr_ratio})"))
+
+        anchor = (low if long else high) if p.stop_mode == "range" else (high + low) / 2
+        if long:
+            entry = snapshot.ask if snapshot.ask is not None else bar.close + spread_val
+            sl = anchor
+        else:
+            entry = snapshot.bid if snapshot.bid is not None else bar.close
+            sl = anchor + spread_val  # a SELL stop triggers on the ask
+        risk = (entry - sl) * sgn
+        checks.append(Check("stop_distance", risk > 0, f"SL {fmt(sl)} ({p.stop_mode}) risk {fmt(risk)}" + (f" = {risk / atr:.2f} ATR" if atr > 0 else "")))
+        if risk <= 0:
+            return StrategyEvaluation(snapshot.symbol, self.strategy_id, None, checks, side_considered=side)
+        tp = entry + sgn * p.rr_target * risk
+        if snapshot.point:
+            digits = max(0, round(-math.log10(snapshot.point)))
+            entry, sl, tp = round(float(entry), digits), round(float(sl), digits), round(float(tp), digits)
+        checks.append(Check("risk_reward", p.rr_target >= p.min_room_rr, f"target RR {p.rr_target:.2f}"))
+
+        failed = [c for c in checks if c.mandatory and not c.passed]
+        if failed:
+            return StrategyEvaluation(snapshot.symbol, self.strategy_id, None, checks, side_considered=side)
+
+        signal = Signal(
+            strategy_id=self.strategy_id, strategy_version=self.version, symbol=snapshot.symbol, side=side,
+            timeframe=p.entry_tf, bar_time=bar.bar_time, entry=float(entry), stop_loss=float(sl), take_profit=float(tp),
+            atr=float(atr), checks=checks, features=TrendPullbackStrategy.features(side, trend, bar, context, spread_val, risk),
+        )
+        return StrategyEvaluation(snapshot.symbol, self.strategy_id, signal, checks, side_considered=side)
+
+    def exit_reason(self, side: Side, snapshot: MarketSnapshot, bars_held: int) -> str | None:
+        p = self.params
+        ref = snapshot.frame(p.entry_tf) or snapshot.frame(p.trend_tf)
+        if ref is not None:
+            closed_at = ref.bar_time + timedelta(minutes=Timeframe(ref.timeframe).minutes)
+            if closed_at.hour >= p.exit_hour or closed_at.hour < p.range_start_hour:
+                return f"session end ({closed_at:%H:%M} terminal time, exit at {p.exit_hour}:00)"
+        if p.max_hold_bars and bars_held >= p.max_hold_bars:
+            return f"max holding time reached ({bars_held} {p.entry_tf} bars)"
+        return None
+
+
+STRATEGIES: dict[str, type[Strategy]] = {
+    TrendPullbackStrategy.strategy_id: TrendPullbackStrategy,
+    AsianRangeBreakoutStrategy.strategy_id: AsianRangeBreakoutStrategy,
+}
 
 
 def build_strategy(strategy_id: str, params: dict | None = None) -> Strategy:

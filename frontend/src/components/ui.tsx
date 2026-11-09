@@ -80,7 +80,9 @@ export function Confirm({
     dialog.current?.showModal();
   }, []);
 
-  const ready = (!phrase || typed === phrase) && (!password || pw.length > 0) && !busy;
+  // Tolerate case and surrounding spaces; the canonical phrase is what gets sent.
+  const phraseOk = !phrase || typed.trim().replace(/\s+/g, " ").toUpperCase() === phrase;
+  const ready = phraseOk && (!password || pw.length > 0) && !busy;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -88,7 +90,7 @@ export function Confirm({
     setBusy(true);
     setError(null);
     try {
-      await onConfirm({ phrase: typed, password: pw });
+      await onConfirm({ phrase: phrase ?? typed, password: pw });
       onClose();
     } catch (err) {
       setError((err as Error).message);
@@ -110,7 +112,8 @@ export function Confirm({
         {password && (
           <label className="field">
             <span>Your password</span>
-            <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" />
+            {/* new-password keeps the browser from autofilling the login into the phrase field */}
+            <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} onInput={(e) => setPw(e.currentTarget.value)} autoComplete="new-password" />
           </label>
         )}
         <ErrorNote error={error} />

@@ -87,6 +87,11 @@ class TimeframeAnalysis:
     volume_ratio: float | None
     recent_lows: tuple[float, ...] = field(default=())
     recent_highs: tuple[float, ...] = field(default=())
+    # bars of the current day (bar-timestamp clock) up to and including this bar
+    day_hours: tuple[int, ...] = field(default=())
+    day_highs: tuple[float, ...] = field(default=())
+    day_lows: tuple[float, ...] = field(default=())
+    day_closes: tuple[float, ...] = field(default=())
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -132,6 +137,8 @@ class PreparedFrame:
         d = self.df
         self.time = pd.to_datetime(d["time"], utc=True)
         self.close_time = self.time + pd.Timedelta(minutes=timeframe.minutes)
+        self.day = ((self.time - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(days=1)).to_numpy()
+        self.hour = self.time.dt.hour.to_numpy()
         close, high, low = d["close"].astype(float), d["high"].astype(float), d["low"].astype(float)
         self.o = d["open"].to_numpy(float)
         self.h = high.to_numpy()
@@ -238,6 +245,9 @@ class MarketAnalyzer:
             volume_kind = "real" if vol_src is pf.real_volume else "tick"
             volume_ratio = float(vol_src[idx] / window.mean())
 
+        day_start = int(np.searchsorted(pf.day, pf.day[idx], side="left"))
+        today = slice(day_start, idx + 1)
+
         return TimeframeAnalysis(
             timeframe=pf.timeframe.value,
             bar_time=pf.time.iloc[idx].to_pydatetime(),
@@ -254,6 +264,10 @@ class MarketAnalyzer:
             volume_kind=volume_kind, volume_ratio=volume_ratio,
             recent_lows=tuple(float(x) for x in pf.l[max(0, idx - 9) : idx + 1]),
             recent_highs=tuple(float(x) for x in pf.h[max(0, idx - 9) : idx + 1]),
+            day_hours=tuple(int(x) for x in pf.hour[today]),
+            day_highs=tuple(float(x) for x in pf.h[today]),
+            day_lows=tuple(float(x) for x in pf.l[today]),
+            day_closes=tuple(float(x) for x in pf.c[today]),
         )
 
     def _breakout(self, pf: PreparedFrame, idx: int, highs_idx: np.ndarray, lows_idx: np.ndarray, atr: float) -> tuple[str | None, float | None, bool]:
