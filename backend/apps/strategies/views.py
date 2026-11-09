@@ -31,6 +31,8 @@ class StrategySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(str(exc)) from exc
         if p.rr_target < 1.0 or p.max_sl_atr <= p.min_sl_atr or p.pullback_ema not in ("fast", "mid"):
             raise serializers.ValidationError("inconsistent parameters (rr_target >= 1, max_sl_atr > min_sl_atr, pullback_ema fast|mid)")
+        if p.stop_mode not in ("range", "mid") or not 0 <= p.range_start_hour < p.range_end_hour <= p.entry_end_hour <= p.exit_hour <= 24:
+            raise serializers.ValidationError("inconsistent session parameters (stop_mode range|mid, range_start_hour < range_end_hour <= entry_end_hour <= exit_hour <= 24)")
         return p.to_dict()
 
 

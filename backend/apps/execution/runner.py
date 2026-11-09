@@ -28,7 +28,7 @@ from trading_engine.ai_decision_engine import AIDecisionEngine, PerformanceStats
 from trading_engine.config import AgentConfig, ExecutionConfig
 from trading_engine.models import AgentMode
 from trading_engine.risk_manager import DailyLossTracker
-from trading_engine.strategy_engine import TrendPullbackStrategy, build_strategy
+from trading_engine.strategy_engine import AsianRangeBreakoutStrategy, TrendPullbackStrategy, build_strategy
 
 from .journal import DjangoJournal
 from .models import AgentCommand, AgentControl, ConnectionSettings
@@ -67,7 +67,11 @@ def ensure_defaults() -> StrategyConfig:
         strategy_id=TrendPullbackStrategy.strategy_id,
         defaults={"version": TrendPullbackStrategy.version, "params": TrendPullbackStrategy().params.to_dict()},
     )
-    return strat
+    StrategyConfig.objects.get_or_create(
+        strategy_id=AsianRangeBreakoutStrategy.strategy_id,
+        defaults={"version": AsianRangeBreakoutStrategy.version, "params": AsianRangeBreakoutStrategy().params.to_dict(), "enabled": False},
+    )
+    return StrategyConfig.active() or strat
 
 
 def performance_context() -> dict[tuple[str, str], PerformanceStats]:
@@ -112,8 +116,11 @@ class AgentRunner:
             ai_min_quality=conn.ai_min_quality, allow_live_env=settings.ALLOW_LIVE_TRADING,
         )
 
+    def _strategy_config(self) -> StrategyConfig:
+        return StrategyConfig.active() or StrategyConfig.objects.get(pk=self.strategy_cfg.pk)
+
     def _strategy(self):
-        cfg = StrategyConfig.objects.get(pk=self.strategy_cfg.pk)
+        cfg = self._strategy_config()
         return build_strategy(cfg.strategy_id, cfg.params)
 
     def _ai(self) -> AIDecisionEngine:
@@ -122,7 +129,7 @@ class AgentRunner:
     def _settings_versions(self) -> tuple[Any, ...]:
         return (
             RiskSettings.load().updated_at,
-            StrategyConfig.objects.get(pk=self.strategy_cfg.pk).updated_at,
+            tuple(StrategyConfig.objects.values_list("strategy_id", "enabled", "updated_at")),
             ConnectionSettings.load().updated_at,
             tuple(SymbolConfig.objects.values_list("name", "enabled", "max_spread_points")),
             BacktestRun.objects.filter(status="DONE").count(),
@@ -179,7 +186,7 @@ class AgentRunner:
         self._restored = True
 
     def _strategy_validated(self) -> bool:
-        return StrategyConfig.objects.get(pk=self.strategy_cfg.pk).validation_status == "PASSED"
+        return self._strategy_config().validation_status == "PASSED"
 
     # ------------------------------------------------------------- commands
     def process_commands(self) -> None:

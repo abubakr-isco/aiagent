@@ -53,7 +53,7 @@ def test_close_all_requires_admin_and_typed_confirmation(client_for):
 def test_risk_settings_validation_and_audit(client_for):
     c = client_for("admin")
     assert c.get("/api/risk/settings/").data["risk_per_trade_pct"] == 0.5
-    r = c.put("/api/risk/settings/", {"risk_per_trade_pct": 5}, format="json")
+    r = c.put("/api/risk/settings/", {"risk_per_trade_pct": 11}, format="json")
     assert r.status_code == 400
     r = c.put("/api/risk/settings/", {"max_total_open_risk_pct": 0.1}, format="json")
     assert r.status_code == 400  # below per-trade risk
@@ -88,6 +88,19 @@ def test_live_mode_refused_without_every_precondition(client_for, settings):
     assert not AgentCommand.objects.filter(command="set_mode").exists()
     assert AuditLog.objects.filter(action="mode.live_refused").count() == 2
     assert client_for("operator").post("/api/control/mode/", {"mode": "DEMO"}, format="json").status_code == 403
+
+
+def test_live_check_uses_the_enabled_strategy(client_for, settings):
+    from apps.execution.runner import ensure_defaults
+
+    settings.ALLOW_LIVE_TRADING = True
+    trend = ensure_defaults()
+    StrategyConfig.objects.filter(pk=trend.pk).update(validation_status="PASSED", enabled=False)
+    StrategyConfig.objects.filter(strategy_id="asian_breakout").update(enabled=True)
+    assert StrategyConfig.active().strategy_id == "asian_breakout"
+    AgentControl.objects.filter(pk=1).update(account={"kind": "REAL"})
+    r = client_for("admin").post("/api/control/mode/", {"mode": "LIVE", "confirm": "ENABLE LIVE TRADING", "password": PASSWORD}, format="json")
+    assert r.status_code == 400 and any("strategy" in p for p in r.data["problems"])
 
 
 def test_live_mode_request_when_all_preconditions_hold(client_for, settings):

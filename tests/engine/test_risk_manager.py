@@ -249,7 +249,7 @@ def test_invalid_config_rejected(journal, mock):
     with pytest.raises(ValueError):
         RiskManager(RiskConfig(max_positions_per_symbol=3), journal, mock)
     with pytest.raises(ValueError):
-        RiskManager(RiskConfig(risk_per_trade_pct=5), journal, mock)
+        RiskManager(RiskConfig(risk_per_trade_pct=11), journal, mock)
 
 
 def test_approval_expires_and_is_tamper_proof(mock, risk, clock):

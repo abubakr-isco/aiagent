@@ -42,8 +42,8 @@ class RiskConfig:
 
     def validate(self) -> list[str]:
         errors = []
-        if not 0 < self.risk_per_trade_pct <= 2.0:
-            errors.append("risk_per_trade_pct must be in (0, 2]")
+        if not 0 < self.risk_per_trade_pct <= 10.0:
+            errors.append("risk_per_trade_pct must be in (0, 10]")
         if self.max_total_open_risk_pct < self.risk_per_trade_pct:
             errors.append("max_total_open_risk_pct must be >= risk_per_trade_pct")
         if not 0 < self.daily_loss_limit_pct <= 10:
@@ -86,6 +86,13 @@ class StrategyParams:
     exit_on_trend_flip: bool = True
     max_hold_bars: int = 96  # entry-TF bars (24h on M15)
     breakeven_at_r: float = 0.0  # 0 disables
+    # asian_breakout: hours use the bar-timestamp clock (broker server time)
+    range_start_hour: int = 2
+    range_end_hour: int = 9
+    entry_end_hour: int = 14
+    exit_hour: int = 22
+    min_range_bars: int = 20  # entry-TF bars inside the range window
+    stop_mode: str = "range"  # range (opposite edge) | mid (middle of the range)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "StrategyParams":
